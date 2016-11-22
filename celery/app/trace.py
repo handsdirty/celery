@@ -362,6 +362,7 @@ def build_tracer(name, task, loader=None, hostname=None, store_errors=True,
                         uuid, {'pid': pid, 'hostname': hostname}, STARTED,
                         request=task_request,
                     )
+                store_result(uuid, None, STARTED, request=task_request)
 
                 # -*- TRACE -*-
                 try:
