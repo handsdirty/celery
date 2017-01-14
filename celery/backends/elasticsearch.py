@@ -145,6 +145,7 @@ class ElasticsearchBackend(KeyValueStoreBackend):
             id=id,
             doc_type=self.doc_type,
             body=body,
+            timeout='10s',
             **kwargs
         )
 
@@ -154,6 +155,7 @@ class ElasticsearchBackend(KeyValueStoreBackend):
             doc_type=self.doc_type,
             id=id,
             body={'doc': body},
+            timeout='10s',
         )
 
     def mget(self, keys):
