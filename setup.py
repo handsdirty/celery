@@ -199,7 +199,7 @@ class pytest(setuptools.command.test.test):
 
 meta = parse_dist_meta()
 setuptools.setup(
-    name='red-celery',
+    name=NAME,
     packages=setuptools.find_packages(exclude=['t', 't.*']),
     version=meta['version'],
     description=meta['doc'],
