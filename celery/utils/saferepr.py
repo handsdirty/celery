@@ -13,19 +13,18 @@ Very slow with no limits, super quick with limits.
 from __future__ import absolute_import, unicode_literals
 
 import sys
+import traceback
 
-from collections import Iterable, Mapping, deque, namedtuple
+from collections import deque, namedtuple
 
 from decimal import Decimal
 from itertools import chain
 from numbers import Number
 from pprint import _recursion
 
-from kombu.utils.encoding import bytes_to_str
-
 from celery.five import items, text_t
 
-from .text import truncate, truncate_bytes
+from .text import truncate
 
 __all__ = ['saferepr', 'reprstream']
 
@@ -40,13 +39,33 @@ else:
     class range_t(object):  # noqa
         pass
 
+#: Node representing literal text.
+#:   - .value: is the literal text value
+#:   - .truncate: specifies if this text can be truncated, for things like
+#:                LIT_DICT_END this will be False, as we always display
+#:                the ending brackets, e.g:  [[[1, 2, 3, ...,], ..., ]]
+#:   - .direction: If +1 the current level is increment by one,
+#:                 if -1 the current level is decremented by one, and
+#:                 if 0 the current level is unchanged.
 _literal = namedtuple('_literal', ('value', 'truncate', 'direction'))
+
+#: Node representing a dictionary key.
 _key = namedtuple('_key', ('value',))
+
+#: Node representing quoted text, e.g. a string value.
 _quoted = namedtuple('_quoted', ('value',))
+
+
+#: Recursion protection.
 _dirty = namedtuple('_dirty', ('objid',))
 
+#: Types that are repsented as chars.
 chars_t = (bytes, text_t)
+
+#: Types that are regarded as safe to call repr on.
 safe_t = (Number,)
+
+#: Set types.
 set_t = (frozenset, set)
 
 LIT_DICT_START = _literal('{', False, +1)
@@ -63,6 +82,7 @@ LIT_TUPLE_END_SV = _literal(',)', False, -1)
 
 
 def saferepr(o, maxlen=None, maxlevels=3, seen=None):
+    # type: (Any, int, int, Set) -> str
     """Safe version of :func:`repr`.
 
     Warning:
@@ -78,6 +98,7 @@ def saferepr(o, maxlen=None, maxlevels=3, seen=None):
 def _chaindict(mapping,
                LIT_DICT_KVSEP=LIT_DICT_KVSEP,
                LIT_LIST_SEP=LIT_LIST_SEP):
+    # type: (Dict, _literal, _literal) -> Iterator[Any]
     size = len(mapping)
     for i, (k, v) in enumerate(items(mapping)):
         yield _key(k)
@@ -88,6 +109,7 @@ def _chaindict(mapping,
 
 
 def _chainlist(it, LIT_LIST_SEP=LIT_LIST_SEP):
+    # type: (List) -> Iterator[Any]
     size = len(it)
     for i, v in enumerate(it):
         yield v
@@ -96,10 +118,71 @@ def _chainlist(it, LIT_LIST_SEP=LIT_LIST_SEP):
 
 
 def _repr_empty_set(s):
+    # type: (Set) -> str
     return '%s()' % (type(s).__name__,)
 
 
+def _safetext(val):
+    # type: (AnyStr) -> str
+    if isinstance(val, bytes):
+        try:
+            val.encode('utf-8')
+        except UnicodeDecodeError:
+            # is bytes with unrepresentable characters, attempt
+            # to convert back to unicode
+            return val.decode('utf-8', errors='backslashreplace')
+    return val
+
+
+def _format_binary_bytes(val, maxlen, ellipsis='...'):
+    # type: (bytes, int, str) -> str
+    if maxlen and len(val) > maxlen:
+        # we don't want to copy all the data, just take what we need.
+        chunk = memoryview(val)[:maxlen].tobytes()
+        return _bytes_prefix("'{0}{1}'".format(
+            _repr_binary_bytes(chunk), ellipsis))
+    return _bytes_prefix("'{0}'".format(_repr_binary_bytes(val)))
+
+
+def _bytes_prefix(s):
+    return 'b' + s if IS_PY3 else s
+
+
+def _repr_binary_bytes(val):
+    # type: (bytes) -> str
+    try:
+        return val.decode('utf-8')
+    except UnicodeDecodeError:
+        # possibly not unicode, but binary data so format as hex.
+        try:
+            ashex = val.hex
+        except AttributeError:  # pragma: no cover
+            # Python 3.4
+            return val.decode('utf-8', errors='replace')
+        else:
+            # Python 3.5+
+            return ashex()
+
+
+def _format_chars(val, maxlen):
+    # type: (AnyStr, int) -> str
+    if isinstance(val, bytes):  # pragma: no cover
+        return _format_binary_bytes(val, maxlen)
+    else:
+        return "'{0}'".format(truncate(val, maxlen))
+
+
+def _repr(obj):
+    # type: (Any) -> str
+    try:
+        return repr(obj)
+    except Exception as exc:
+        return '<Unrepresentable {0!r}{1:#x}: {2!r} {3!r}>'.format(
+            type(obj), id(obj), exc, '\n'.join(traceback.format_stack()))
+
+
 def _saferepr(o, maxlen=None, maxlevels=3, seen=None):
+    # type: (Any, int, int, Set) -> str
     stack = deque([iter([o])])
     for token, it in reprstream(stack, seen=seen, maxlevels=maxlevels):
         if maxlen is not None and maxlen <= 0:
@@ -113,13 +196,9 @@ def _saferepr(o, maxlen=None, maxlevels=3, seen=None):
         elif isinstance(token, _key):
             val = saferepr(token.value, maxlen, maxlevels)
         elif isinstance(token, _quoted):
-            val = token.value
-            if IS_PY3 and isinstance(val, bytes):  # pragma: no cover
-                val = "b'%s'" % (bytes_to_str(truncate_bytes(val, maxlen)),)
-            else:
-                val = "'%s'" % (truncate(val, maxlen),)
+            val = _format_chars(token.value, maxlen)
         else:
-            val = truncate(token, maxlen)
+            val = _safetext(truncate(token, maxlen))
         yield val
         if maxlen is not None:
             maxlen -= len(val)
@@ -131,6 +210,7 @@ def _saferepr(o, maxlen=None, maxlevels=3, seen=None):
 
 
 def _reprseq(val, lit_start, lit_end, builtin_type, chainer):
+    # type: (Sequence, _literal, _literal, Any, Any) -> Tuple[Any, ...]
     if type(val) is builtin_type:  # noqa
         return lit_start, lit_end, chainer(val)
     return (
@@ -142,6 +222,7 @@ def _reprseq(val, lit_start, lit_end, builtin_type, chainer):
 
 def reprstream(stack, seen=None, maxlevels=3, level=0, isinstance=isinstance):
     """Streaming repr, yielding tokens."""
+    # type: (deque, Set, int, int, Callable) -> Iterator[Any]
     seen = seen or set()
     append = stack.append
     popleft = stack.popleft
@@ -163,13 +244,13 @@ def reprstream(stack, seen=None, maxlevels=3, level=0, isinstance=isinstance):
             elif isinstance(val, _key):
                 yield val, it
             elif isinstance(val, Decimal):
-                yield repr(val), it
+                yield _repr(val), it
             elif isinstance(val, safe_t):
                 yield text_t(val), it
             elif isinstance(val, chars_t):
                 yield _quoted(val), it
             elif isinstance(val, range_t):  # pragma: no cover
-                yield repr(val), it
+                yield _repr(val), it
             else:
                 if isinstance(val, set_t):
                     if not val:
@@ -183,15 +264,15 @@ def reprstream(stack, seen=None, maxlevels=3, level=0, isinstance=isinstance):
                         LIT_TUPLE_START,
                         LIT_TUPLE_END_SV if len(val) == 1 else LIT_TUPLE_END,
                         _chainlist(val))
-                elif isinstance(val, Mapping):
+                elif isinstance(val, dict):
                     lit_start, lit_end, val = (
                         LIT_DICT_START, LIT_DICT_END, _chaindict(val))
-                elif isinstance(val, Iterable):
+                elif isinstance(val, list):
                     lit_start, lit_end, val = (
                         LIT_LIST_START, LIT_LIST_END, _chainlist(val))
                 else:
                     # other type of object
-                    yield repr(val), it
+                    yield _repr(val), it
                     continue
 
                 if maxlevels and level >= maxlevels:

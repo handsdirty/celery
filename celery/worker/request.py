@@ -53,7 +53,7 @@ def __optimize__():
     global _does_info
     _does_debug = logger.isEnabledFor(logging.DEBUG)
     _does_info = logger.isEnabledFor(logging.INFO)
-__optimize__()
+__optimize__()  # noqa: E305
 
 # Localize
 tz_or_local = timezone.tz_or_local
@@ -303,7 +303,7 @@ class Request(object):
         task_ready(self)
         if soft:
             warn('Soft time limit (%ss) exceeded for %s[%s]',
-                 soft, self.name, self.id)
+                 timeout, self.name, self.id)
             exc = SoftTimeLimitExceeded(soft)
         else:
             error('Hard time limit (%ss) exceeded for %s[%s]',
@@ -408,7 +408,6 @@ class Request(object):
             'args': self.argsrepr,
             'kwargs': self.kwargsrepr,
             'type': self.type,
-            'body': self.body,
             'hostname': self.hostname,
             'time_start': self.time_start,
             'acknowledged': self.acknowledged,

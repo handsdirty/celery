@@ -402,7 +402,10 @@ class Consumer(object):
         Retries establishing the connection if the
         :setting:`broker_connection_retry` setting is enabled
         """
-        return self.connection_for_read(heartbeat=self.amqheartbeat)
+        conn = self.connection_for_read(heartbeat=self.amqheartbeat)
+        if self.hub:
+            conn.transport.register_with_event_loop(conn.connection, self.hub)
+        return conn
 
     def connection_for_read(self, heartbeat=None):
         return self.ensure_connected(
@@ -432,8 +435,6 @@ class Consumer(object):
             _error_handler, self.app.conf.broker_connection_max_retries,
             callback=maybe_shutdown,
         )
-        if self.hub:
-            conn.transport.register_with_event_loop(conn.connection, self.hub)
         return conn
 
     def _flush_events(self):

@@ -30,6 +30,8 @@ def _make_id(target):  # pragma: no cover
     if hasattr(target, '__func__'):
         return (id(target.__self__), id(target.__func__))
     return id(target)
+
+
 NONE_ID = _make_id(None)
 
 NO_RECEIVERS = object()
@@ -50,7 +52,7 @@ class Signal(object):  # pragma: no cover
     #: ``{receiverkey (id): weakref(receiver)}`` mappings.
     receivers = None
 
-    def __init__(self, providing_args=None, use_caching=True, name=None):
+    def __init__(self, providing_args=None, use_caching=False, name=None):
         self.receivers = []
         self.providing_args = set(
             providing_args if providing_args is not None else [])
