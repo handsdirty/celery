@@ -1123,9 +1123,6 @@ class group(Signature):
                                   chord=chord, root_id=root_id,
                                   parent_id=parent_id)
 
-    def __iter__(self):
-        return iter(self.tasks)
-
     def __repr__(self):
         if self.tasks:
             return remove_repeating_from_task(
@@ -1242,7 +1239,7 @@ class chord(Signature):
         if len(self.tasks) == 1:
             # chord([A], B) can be optimized as A | B
             # - Issue #3323
-            return (self.tasks[0].set(task_id=task_id) | body).apply_async(
+            return (self.tasks[0] | body).set(task_id=task_id).apply_async(
                 args, kwargs, **options)
         # chord([A, B, ...], C)
         return self.run(tasks, body, args, task_id=task_id, **options)
@@ -1362,7 +1359,7 @@ def signature(varies, *args, **kwargs):
             return varies.clone()
         return Signature.from_dict(varies, app=app)
     return Signature(varies, *args, **kwargs)
-subtask = signature   # XXX compat
+subtask = signature  # noqa: E305 XXX compat
 
 
 def maybe_signature(d, app=None, clone=False):
@@ -1390,5 +1387,4 @@ def maybe_signature(d, app=None, clone=False):
         if app is not None:
             d._app = app
     return d
-
-maybe_subtask = maybe_signature  # XXX compat
+maybe_subtask = maybe_signature  # noqa: E305 XXX compat

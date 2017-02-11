@@ -888,6 +888,18 @@ Default: No limit.
 Maximum number of connections available in the Redis connection
 pool used for sending and retrieving results.
 
+.. setting:: redis_socket_connect_timeout
+
+``redis_socket_connect_timeout``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. versionadded:: 5.0.1
+
+Default: :const:`None`
+
+Socket timeout for connections to Redis from the result backend
+in seconds (int/float)
+
 .. setting:: redis_socket_timeout
 
 ``redis_socket_timeout``
@@ -895,8 +907,8 @@ pool used for sending and retrieving results.
 
 Default: 5.0 seconds.
 
-Socket timeout for connections to Redis from the result backend
-in seconds (int/float)
+Socket timeout for reading/writing operations to the Redis server
+in seconds (int/float), used by the redis result backend.
 
 .. _conf-cassandra-result-backend:
 
@@ -1351,7 +1363,7 @@ Where ``myapp.tasks.route_task`` could be:
 
 .. code-block:: python
 
-    def route_task(self, name, args, kwargs, options, task=None, **kwargs):
+    def route_task(self, name, args, kwargs, options, task=None, **kw):
             if task == 'celery.ping':
                 return {'queue': 'default'}
 
@@ -1570,9 +1582,8 @@ is optional, and defaults to the specific transports default values.
 
 The transport part is the broker implementation to use, and the
 default is ``amqp``, (uses ``librabbitmq`` if installed or falls back to
-``pyamqp``). There are also many other choices, including;
-``redis``, ``beanstalk``, ``sqlalchemy``, ``django``, ``mongodb``,
-and ``couchdb``.
+``pyamqp``). There are also other choices available, including;
+``redis://``, ``sqs://``, and ``qpid://``.
 
 The scheme can also be a fully qualified path to your own transport
 implementation::
